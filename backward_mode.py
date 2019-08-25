@@ -43,6 +43,41 @@ class Linear(Layer):
         return X @ self.weights.tensor + self.bias.tensor, backward
 
 
+class Attention(Layer):
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def forward(self, Q, K, V):
+        pass
+
+
+class BatchNormalize(Layer):
+    # github.io "understanding the backward pass through BN layer"
+    # also from ctherey.github.io "backpropagation"
+
+    def __init__(self, input_dim, eps=1E-9):
+        super().__init__()
+        self.gamma = self.build_param(np.ones(input_dim))
+        self.beta = self.build_param(np.zeros(input_dim))
+        self.eps = eps
+
+    def forward(self, X):
+        N = X.shape[0]
+        mean = X.mean(axis=0)
+        var = X.var(axis=0)
+        X_hat = (X - mean) * ((var + self.eps) ** -0.5)
+        norm = self.gamma.tensor * X_hat + self.beta.tensor
+
+        def backward(D):
+            self.beta.gradient += D.sum(axis=0)
+            self.gamma.gradient = np.sum(X_hat * D, axis=0)
+            return self.gamma.tensor * (var + self.eps) ** -0.5 / N * \
+                   (N * D - self.beta.gradient - (X - mean) / (var + self.eps) * np.sum(D * (X - mean), axis=0))
+
+        return norm, backward
+
+
 class Relu(Layer):
     def forward(self, X):
         mask = X > 0.
@@ -57,6 +92,19 @@ class Sigmoid(Layer):
             return D * S * (1 - S)
 
         return S, backward
+
+
+class Softmax(Layer):
+    # from stackoverflow post "derivative of softmax function in python"
+    def forward(self, X):
+        exps = np.exp(X)
+        softmax = np.sum(exps)
+
+        def backward(D):
+            s = softmax.reshape(-1, 1)
+            return np.diagflat(s) - np.dot(s, s.T)
+
+        return softmax, backward
 
 
 class Sequential(Layer):
@@ -121,11 +169,18 @@ class Learner(object):
 
 
 if __name__ == '__main__':
-    X = np.random.rand(1000, 2)
-    Y = 6.2 * X[:, 0] * X[:, 1] + 3.4 * X[:, 0] * X[:, 0] + 22.2 * np.cos(X[:, 1]) + 6.2
-    Y = Y.reshape((1000, 1))
 
+    # TODO plot training loss
+
+    epochs = 1000
+    num_points = 1000
     training_size = 750
+
+    X = np.random.rand(num_points, 2)
+    Y = 6.2 * X[:, 0] * X[:, 1] + 3.4 * X[:, 0] * X[:, 0] + 22.2 * np.cos(X[:, 1]) + 6.2
+    Y += np.random.normal(loc=0, scale=0.1, size=Y.shape)
+    Y = Y.reshape((num_points, 1))
+
     X_train, Y_train = X[:training_size], Y[:training_size]
     X_test, Y_test = X[training_size:], Y[training_size:]
 
@@ -138,21 +193,21 @@ if __name__ == '__main__':
         Linear(2, 1)
     )
     model3 = Sequential(
-        Linear(2, 32),
-        Relu(),
-        Linear(32, 32),
-        Relu(),
-        Linear(32, 32),
-        Relu(),
-        Linear(32, 1),
+        Linear(2, 16),
+        BatchNormalize(16),
+        Sigmoid(),
+        Linear(16, 16),
+        BatchNormalize(16),
+        Sigmoid(),
+        Linear(16, 1),
     )
 
     losses1 = Learner(model1, mse_loss, SGDOptimizer(learning_rate=0.01)
-                      ).fit(X_train, Y_train, epochs=1000, batch_size=50)
+                      ).fit(X_train, Y_train, epochs=epochs, batch_size=50)
     losses2 = Learner(model2, mse_loss, SGDOptimizer(learning_rate=0.01)
-                      ).fit(X_train, Y_train, epochs=1000, batch_size=50)
+                      ).fit(X_train, Y_train, epochs=epochs, batch_size=50)
     losses3 = Learner(model3, mse_loss, SGDOptimizer(learning_rate=0.01)
-                      ).fit(X_train, Y_train, epochs=1000, batch_size=50)
+                      ).fit(X_train, Y_train, epochs=epochs, batch_size=50)
 
     print(mse_loss(model1.forward(X_train)[0], Y_train)[0], mse_loss(model1.forward(X_test)[0], Y_test)[0])
     print(mse_loss(model2.forward(X_train)[0], Y_train)[0], mse_loss(model2.forward(X_test)[0], Y_test)[0])
