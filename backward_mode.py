@@ -193,13 +193,13 @@ if __name__ == '__main__':
         Linear(2, 1)
     )
     model3 = Sequential(
-        Linear(2, 16),
-        BatchNormalize(16),
+        Linear(2, 64),
+        BatchNormalize(64),
         Sigmoid(),
-        Linear(16, 16),
-        BatchNormalize(16),
+        Linear(64, 64),
+        BatchNormalize(64),
         Sigmoid(),
-        Linear(16, 1),
+        Linear(64, 1),
     )
 
     losses1 = Learner(model1, mse_loss, SGDOptimizer(learning_rate=0.01)
